@@ -265,15 +265,27 @@ def load_older_updates(env: Env) -> dict[str, Any]:
 
 
 def save_patch_info(app: "APP", updates_info: dict[str, Any]) -> dict[str, Any]:
-    """Save version info a patching resources used to a file."""
+    """Save version info of patching resources used to a file."""
+
+    # Function to extract file names and versions from a resource list
+    def extract_versions(resource_list: list[dict[str, str]]) -> list[dict[str, str]]:
+        return [{"file_name": item["file_name"], "version": item["version"]} for item in resource_list]
+
+    # Extracting versions and file names for each resource
+    cli_versions = extract_versions(app.resource["cli"])
+    integration_versions = extract_versions(app.resource["integrations"])
+    patches_versions = extract_versions(app.resource["patches"])
+    patches_json_versions = extract_versions(app.resource["patches_json"])
+
     updates_info[app.app_name] = {
         app_version_key: app.app_version,
-        integration_version_key: app.resource["integrations"]["version"],
-        patches_version_key: app.resource["patches"]["version"],
-        cli_version_key: app.resource["cli"]["version"],
-        patches_json_version_key: app.resource["patches_json"]["version"],
+        integration_version_key: integration_versions,
+        patches_version_key: patches_versions,
+        cli_version_key: cli_versions,
+        patches_json_version_key: patches_json_versions,
         "ms_epoch_since_patched": datetime_to_ms_epoch(datetime.now(timezone(time_zone))),
         "date_patched": datetime.now(timezone(time_zone)),
         "app_dump": app.for_dump(),
     }
+
     return updates_info

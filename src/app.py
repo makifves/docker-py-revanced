@@ -30,13 +30,20 @@ class APP(object):
         self.app_name = app_name
         self.app_version = config.env.str(f"{app_name}_VERSION".upper(), None)
         self.experiment = False
-        self.cli_dl = config.env.str(f"{app_name}_CLI_DL".upper(), config.global_cli_dl)
-        self.patches_dl = config.env.str(f"{app_name}_PATCHES_DL".upper(), config.global_patches_dl)
-        self.integrations_dl = config.env.str(f"{app_name}_INTEGRATIONS_DL".upper(), config.global_integrations_dl)
-        self.patches_json_dl = config.env.str(f"{app_name}_PATCHES_JSON_DL".upper(), self.patches_dl)
+        self.cli_dl: list[str] = config.env.str(f"{app_name}_CLI_DL".upper(), config.global_cli_dl).split(",")
+        self.patches_dl: list[str] = config.env.str(f"{app_name}_PATCHES_DL".upper(), config.global_patches_dl).split(
+            ",",
+        )
+        self.integrations_dl: list[str] = config.env.str(
+            f"{app_name}_INTEGRATIONS_DL".upper(),
+            config.global_integrations_dl,
+        ).split(",")
+        self.patches_json_dl: list[str] = config.env.str(f"{app_name}_PATCHES_JSON_DL".upper(), self.patches_dl).split(
+            ",",
+        )
         self.exclude_request: list[str] = config.env.list(f"{app_name}_EXCLUDE_PATCH".upper(), [])
         self.include_request: list[str] = config.env.list(f"{app_name}_INCLUDE_PATCH".upper(), [])
-        self.resource: dict[str, dict[str, str]] = {}
+        self.resource: dict[str, list[dict[str, str]]] = {}
         self.no_of_patches: int = 0
         self.keystore_name = config.env.str(f"{app_name}_KEYSTORE_FILE_NAME".upper(), config.global_keystore_name)
         self.archs_to_build = config.env.list(f"{app_name}_ARCHS_TO_BUILD".upper(), config.global_archs_to_build)
@@ -136,6 +143,19 @@ class APP(object):
         Downloader(config).direct_download(url, file_name)
         return tag, file_name
 
+    @staticmethod
+    def _download_resources(
+        urls: list[str],
+        config: RevancedConfig,
+        assets_filter: str,
+        file_name: str = "",
+    ) -> list[tuple[str, str]]:
+
+        result = []
+        for url in urls:
+            result.append(APP.download(url, config, assets_filter, file_name))
+        return result
+
     def download_patch_resources(self: Self, config: RevancedConfig) -> None:
         """The function `download_patch_resources` downloads various resources req. for patching.
 
@@ -156,7 +176,10 @@ class APP(object):
 
         # Using a ThreadPoolExecutor for parallelism
         with ThreadPoolExecutor(4) as executor:
-            futures = {resource_name: executor.submit(self.download, *args) for resource_name, *args in download_tasks}
+            futures = {
+                resource_name: executor.submit(self._download_resources, *args)
+                for resource_name, *args in download_tasks
+            }
 
             # Wait for all tasks to complete
             concurrent.futures.wait(futures.values())
@@ -164,11 +187,17 @@ class APP(object):
             # Retrieve results from completed tasks
             for resource_name, future in futures.items():
                 try:
-                    tag, file_name = future.result()
-                    self.resource[resource_name] = {
-                        "file_name": file_name,
-                        "version": tag,
-                    }
+                    downloader_result = future.result()
+                    resource = []
+                    for downloads in downloader_result:
+                        resource.append(
+                            {
+                                "file_name": downloads[0],
+                                "version": downloads[1],
+                            },
+                        )
+
+                    self.resource[resource_name] = resource
                 except BuilderError as e:
                     msg = "Failed to download resource."
                     raise PatchingFailedError(msg) from e

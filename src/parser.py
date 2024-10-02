@@ -164,41 +164,54 @@ class Parser(object):
             The `app` parameter is an instance of the `APP` class. It represents an application that needs
         to be patched.
         """
-        is_new, version = self.is_new_cli(self.config.temp_folder.joinpath(app.resource["cli"]["file_name"]))
+        is_new, version = self.is_new_cli(self.config.temp_folder.joinpath(app.resource["cli"][0]["file_name"]))
         if is_new:
             apk_arg = self.NEW_APK_ARG
             exp = "--force"
         else:
             apk_arg = self.APK_ARG
             exp = "--experimental"
+
         args = [
             self.CLI_JAR,
-            app.resource["cli"]["file_name"],
+            str(self.config.temp_folder.joinpath(app.resource["cli"][0]["file_name"])),  # Convert Path to str
             apk_arg,
             app.download_file_name,
-            self.PATCHES_ARG,
-            app.resource["patches"]["file_name"],
-            self.INTEGRATIONS_ARG,
-            app.resource["integrations"]["file_name"],
-            self.OUTPUT_ARG,
-            app.get_output_file_name(),
-            self.KEYSTORE_ARG,
-            app.keystore_name,
-            self.OPTIONS_ARG,
-            app.options_file,
         ]
+
+        # Add patches using the PATCHES_ARG with multiple -b entries
+        for patch in app.resource["patches"]:
+            args.extend([self.PATCHES_ARG, str(self.config.temp_folder.joinpath(patch["file_name"]))])
+
+        # Add integrations using the INTEGRATIONS_ARG with multiple -m entries
+        for integration in app.resource["integrations"]:
+            args.extend([self.INTEGRATIONS_ARG, str(self.config.temp_folder.joinpath(integration["file_name"]))])
+
+        # Continue with the rest of the arguments
+        args.extend(
+            [
+                self.OUTPUT_ARG,
+                app.get_output_file_name(),
+                self.KEYSTORE_ARG,
+                app.keystore_name,
+                self.OPTIONS_ARG,
+                app.options_file,
+            ],
+        )
+
         if app.experiment:
             logger.debug("Using experimental features")
             args.append(exp)
-        args[1::2] = map(self.config.temp_folder.joinpath, args[1::2])
+
         if app.old_key and "v4" in version:
-            # https://github.com/ReVanced/revanced-cli/issues/272#issuecomment-1740587534
+            # Handle the old key flags
             old_key_flags = [
                 "--keystore-entry-alias=alias",
                 "--keystore-entry-password=ReVanced",
                 "--keystore-password=ReVanced",
             ]
             args.extend(old_key_flags)
+
         if self.config.ci_test:
             self.exclude_all_patches()
         if self._PATCHES:
@@ -207,14 +220,20 @@ class Parser(object):
             excluded = set(possible_archs) - set(app.archs_to_build)
             for arch in excluded:
                 args.extend(("--rip-lib", arch))
+
         start = perf_counter()
         logger.debug(f"Sending request to revanced cli for building with args java {args}")
+
+        # Use subprocess.run with a list instead of Popen to ensure correctness
         process = Popen(["java", *args], stdout=PIPE)
         output = process.stdout
+
         if not output:
             msg = "Failed to send request for patching."
             raise PatchingFailedError(msg)
+
         for line in output:
             logger.debug(line.decode(), flush=True, end="")
+
         process.wait()
         logger.info(f"Patching completed for app {app} in {perf_counter() - start:.2f} seconds.")

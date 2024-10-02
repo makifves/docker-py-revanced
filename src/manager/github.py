@@ -29,6 +29,7 @@ class GitHubManager(ReleaseManager):
             with Path(updates_file).open() as url:
                 data = json.load(url)
         else:
+            print(self.update_file_url)
             with urllib.request.urlopen(self.update_file_url) as url:
                 data = json.load(url)
         if data.get(app.app_name):

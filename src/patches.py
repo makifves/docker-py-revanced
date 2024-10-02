@@ -119,8 +119,10 @@ class Patches(object):
         """
         self.patches_dict[app.app_name] = []
         patch_loader = PatchLoader()
-        patches_file = app.resource["patches_json"]["file_name"]
-        patches = patch_loader.load_patches(f"{config.temp_folder}/{patches_file}")
+        patches = {}
+        for patch_file in app.resource["patches_json"]:
+            patches_file = patch_file["file_name"]
+            patches.update(patch_loader.load_patches(f"{config.temp_folder}/{patches_file}"))
 
         for patch in patches:
             if not patch["compatiblePackages"]:
